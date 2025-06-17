@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Chat</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Login Screen */
+        .login-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .login-form {
+            background: #1f1f1f;
+            padding: 40px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-form h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: 300;
+            font-size: 28px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #b0b0b0;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 16px;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4a4a4a;
+        }
+
+        .btn {
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #3a3a3a;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background: #3a3a3a;
+        }
+
+        .btn-primary {
+            width: 100%;
+            background: #333;
+        }
+
+        .btn-primary:hover {
+            background: #444;
+        }
+
+        /* Chat Screen */
+        .chat-screen {
+            display: none;
+            height: 100vh;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            background: #1f1f1f;
+            padding: 15px 20px;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-title {
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .user-info {
+            font-size: 14px;
+            color: #b0b0b0;
+        }
+
+        .chat-main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .chat-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            max-width: 80%;
+        }
+
+        .message.own {
+            margin-left: auto;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+
+        .message-username {
+            font-weight: 500;
+            font-size: 14px;
+            color: #b0b0b0;
+        }
+
+        .message-timestamp {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .message-content {
+            background: #1f1f1f;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid #2a2a2a;
+            word-wrap: break-word;
+        }
+
+        .message.own .message-content {
+            background: #2a2a2a;
+        }
+
+        .message.system {
+            text-align: center;
+            margin: 10px auto;
+            max-width: none;
+        }
+
+        .message.system .message-content {
+            background: transparent;
+            border: none;
+            color: #666;
+            font-style: italic;
+            font-size: 14px;
+            padding: 5px;
+        }
+
+        .message-image {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .input-container {
+            padding: 20px;
+            background: #1f1f1f;
+            border-top: 1px solid #2a2a2a;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .message-input {
+            flex: 1;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 20px;
+            padding: 12px 16px;
+            color: #e0e0e0;
+            resize: none;
+            max-height: 100px;
+            min-height: 40px;
+            font-family: inherit;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: #4a4a4a;
+        }
+
+        .input-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .image-upload {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .image-upload input[type=file] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .users-sidebar {
+            width: 250px;
+            background: #1f1f1f;
+            border-left: 1px solid #2a2a2a;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .users-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 15px;
+            color: #b0b0b0;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 14px;
+        }
+
+        .user-status {
+            width: 8px;
+            height: 8px;
+            background: #4caf50;
+            border-radius: 50%;
+        }
+
+        .typing-indicator {
+            padding: 10px 20px;
+            font-size: 14px;
+            color: #666;
+            font-style: italic;
+            min-height: 35px;
+        }
+
+        .error-message {
+            background: #d32f2f;
+            color: white;
+            padding: 10px;
+            margin: 10px 20px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .users-sidebar {
+                display: none;
+            }
+
+            .message {
+                max-width: 95%;
+            }
+
+            .login-form {
+                margin: 20px;
+                padding: 30px;
+            }
+        }
+
+        /* Scrollbar Styling */
+        .messages-container::-webkit-scrollbar,
+        .users-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .messages-container::-webkit-scrollbar-track,
+        .users-sidebar::-webkit-scrollbar-track {
+            background: #1f1f1f;
+        }
+
+        .messages-container::-webkit-scrollbar-thumb,
+        .users-sidebar::-webkit-scrollbar-thumb {
+            background: #3a3a3a;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Login Screen -->
+        <div class="login-screen" id="loginScreen">
+            <div class="login-form">
+                <h1>Join Chat</h1>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username">Display Name</label>
+                        <input type="text" id="username" maxlength="50" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Enter Chat</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Chat Screen -->
+        <div class="chat-screen" id="chatScreen">
+            <div class="chat-header">
+                <div class="chat-title">Dark Chat</div>
+                <div class="user-info">
+                    Logged in as: <span id="currentUser"></span>
+                </div>
+            </div>
+
+            <div class="chat-main">
+                <div class="chat-content">
+                    <div class="messages-container" id="messagesContainer"></div>
+
+                    <div class="typing-indicator" id="typingIndicator"></div>
+
+                    <div class="input-container">
+                        <div class="input-wrapper">
+                            <textarea id="messageInput" class="message-input" placeholder="Type a message..." rows="1"
+                                maxlength="1000"></textarea>
+
+                            <div class="input-actions">
+                                <div class="image-upload">
+                                    <input type="file" id="imageInput" accept="image/*">
+                                    <button type="button" class="btn btn-icon"
+                                        onclick="document.getElementById('imageInput').click()">
+                                        📷
+                                    </button>
+                                </div>
+
+                                <button type="button" id="sendButton" class="btn btn-icon">
+                                    ➤
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="users-sidebar">
+                    <div class="users-title">Online Users</div>
+                    <div id="usersList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let currentUser = null;
+        let typingTimer;
+        let isTyping = false;
+
+        // DOM Elements
+        const loginScreen = document.getElementById('loginScreen');
+        const chatScreen = document.getElementById('chatScreen');
+        const loginForm = document.getElementById('loginForm');
+        const usernameInput = document.getElementById('username');
+        const currentUserSpan = document.getElementById('currentUser');
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const imageInput = document.getElementById('imageInput');
+        const usersList = document.getElementById('usersList');
+        const typingIndicator = document.getElementById('typingIndicator');
+
+        // Initialize Socket Connection
+        function initSocket() {
+            socket = io();
+
+            socket.on('connect', () => {
+                console.log('Connected to server');
+            });
+
+            socket.on('messageHistory', (messages) => {
+                messagesContainer.innerHTML = '';
+                messages.forEach(message => displayMessage(message));
+                scrollToBottom();
+            });
+
+            socket.on('message', (message) => {
+                displayMessage(message);
+                scrollToBottom();
+            });
+
+            socket.on('userList', (users) => {
+                updateUsersList(users);
+            });
+
+            socket.on('userTyping', (data) => {
+                updateTypingIndicator(data);
+            });
+
+            socket.on('error', (error) => {
+                showError(error);
+            });
+
+            socket.on('disconnect', () => {
+                showError('Disconnected from server');
+            });
+        }
+
+        // Login Form Handler
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim();
+
+            if (!username) {
+                showError('Please enter a username');
+                return;
+            }
+
+            currentUser = {
+                username: username,
+                id: null
+            };
+
+            socket.emit('join', username);
+            currentUserSpan.textContent = username;
+
+            loginScreen.style.display = 'none';
+            chatScreen.style.display = 'flex';
+
+            messageInput.focus();
+        });
+
+        // Message Sending
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            socket.emit('message', { text });
+            messageInput.value = '';
+            adjustTextareaHeight();
+
+            if (isTyping) {
+                socket.emit('typing', false);
+                isTyping = false;
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Typing Indicator
+        messageInput.addEventListener('input', () => {
+            adjustTextareaHeight();
+
+            if (!isTyping) {
+                socket.emit('typing', true);
+                isTyping = true;
+            }
+
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+                socket.emit('typing', false);
+                isTyping = false;
+            }, 1000);
+        });
+
+        // Image Upload
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.size > 2 * 1024 * 1024) {
+                showError('File too large. Maximum size is 2MB.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('userId', socket.id);
+
+            fetch('/upload-image', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        showError(data.error || 'Failed to upload image');
+                    }
+                })
+                .catch(error => {
+                    showError('Failed to upload image');
+                });
+
+            imageInput.value = '';
+        });
+
+        // Display Message
+        function displayMessage(message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+
+            if (message.type === 'system') {
+                messageDiv.classList.add('system');
+                messageDiv.innerHTML = `
+                    <div class="message-content">${message.text}</div>
+                `;
+            } else {
+                if (message.username === currentUser.username) {
+                    messageDiv.classList.add('own');
+                }
+
+                const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                let content = '';
+                if (message.type === 'image') {
+                    content = `<img src="${message.imageData}" alt="Shared image" class="message-image" onclick="openImageModal(this.src)">`;
+                } else {
+                    content = message.text;
+                }
+
+                messageDiv.innerHTML = `
+                    <div class="message-header">
+                        <span class="message-username">${message.username}</span>
+                        <span class="message-timestamp">${timestamp}</span>
+                    </div>
+                    <div class="message-content">${content}</div>
+                `;
+            }
+
+            messagesContainer.appendChild(messageDiv);
+        }
+
+        // Update Users List
+        function updateUsersList(users) {
+            usersList.innerHTML = '';
+            users.forEach(user => {
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-item';
+                userDiv.innerHTML = `
+                    <div class="user-status"></div>
+                    <span>${user.username}</span>
+                `;
+                usersList.appendChild(userDiv);
+            });
+        }
+
+        // Update Typing Indicator
+        function updateTypingIndicator(data) {
+            if (data.isTyping) {
+                typingIndicator.textContent = `${data.username} is typing...`;
+            } else {
+                typingIndicator.textContent = '';
+            }
+        }
+
+        // Auto-resize textarea
+        function adjustTextareaHeight() {
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
+        }
+
+        // Scroll to bottom
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+
+            setTimeout(() => {
+                errorDiv.remove();
+            }, 5000);
+        }
+
+        // Image modal (simple version)
+        function openImageModal(src) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.9);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+                cursor: pointer;
+            `;
+
+            const img = document.createElement('img');
+            img.src = src;
+            img.style.cssText = `
+                max-width: 90%;
+                max-height: 90%;
+                border-radius: 8px;
+            `;
+
+            modal.appendChild(img);
+            document.body.appendChild(modal);
+
+            modal.addEventListener('click', () => {
+                modal.remove();
+            });
+        }
+
+        // Initialize
+        initSocket();
+    </script>
+</body>
+
+</html>
