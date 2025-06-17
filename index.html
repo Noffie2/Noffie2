@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>P2P Chat</title>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #121212;
+      color: #e0e0e0;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #login, #chat {
+      margin: auto;
+      width: 100%;
+      max-width: 600px;
+      padding: 20px;
+    }
+    #login {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #chat {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid #1f1f1f;
+      padding: 10px;
+      background: #1f1f1f;
+      margin-bottom: 10px;
+    }
+    .message {
+      margin-bottom: 10px;
+    }
+    .image-msg img {
+      max-width: 200px;
+      max-height: 200px;
+    }
+    #users {
+      font-size: 0.9em;
+      margin-bottom: 10px;
+    }
+    #users span {
+      margin-right: 10px;
+    }
+    .online {
+      color: limegreen;
+    }
+    input, button {
+      background: #1f1f1f;
+      color: #e0e0e0;
+      border: 1px solid #333;
+      padding: 5px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Enter a display name:</h2>
+  <input type="text" id="usernameInput" placeholder="Your name" />
+  <button onclick="startChat()">Join Chat</button>
+</div>
+
+<div id="chat">
+  <div id="users">Online: </div>
+  <div id="messages"></div>
+  <input type="file" id="imageInput" accept="image/png, image/jpeg" />
+  <input type="text" id="messageInput" placeholder="Type a message..." />
+  <button onclick="sendMessage()">Send</button>
+</div>
+
+<script>
+  let username = '';
+  let peer, conn;
+  const connections = {};
+  const peers = new Set();
+  const userList = {};
+
+  function startChat() {
+    username = document.getElementById('usernameInput').value.trim();
+    if (!username) return alert('Enter a name');
+
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('chat').style.display = 'flex';
+
+    const peerId = 'user-' + Math.random().toString(36).substr(2, 9);
+    peer = new Peer(peerId, { host: 'peerjs.com', secure: true, port: 443 });
+
+    peer.on('open', () => {
+      broadcastPresence();
+    });
+
+    peer.on('connection', (newConn) => {
+      newConn.on('data', (data) => handleIncoming(newConn.peer, data));
+      newConn.on('open', () => {
+        connections[newConn.peer] = newConn;
+        broadcastPresence();
+      });
+    });
+
+    setInterval(broadcastPresence, 5000);
+    discoverPeers();
+  }
+
+  function discoverPeers() {
+    fetch('https://0.peerjs.com/peers') // using peerjs default broker
+      .then(res => res.json())
+      .then(peersList => {
+        peersList.forEach(id => {
+          if (id !== peer.id && !connections[id]) {
+            const c = peer.connect(id);
+            c.on('open', () => {
+              connections[id] = c;
+              c.on('data', data => handleIncoming(id, data));
+              broadcastPresence();
+            });
+          }
+        });
+      });
+  }
+
+  function broadcastPresence() {
+    const data = { type: 'presence', name: username };
+    Object.values(connections).forEach(c => c.open && c.send(data));
+    updateUsersList(peer.id, username);
+  }
+
+  function handleIncoming(fromId, data) {
+    if (data.type === 'text') {
+      appendMessage(data.name, data.text, data.time);
+    } else if (data.type === 'image') {
+      appendImage(data.name, data.image, data.time);
+    } else if (data.type === 'presence') {
+      updateUsersList(fromId, data.name);
+    }
+  }
+
+  function updateUsersList(id, name) {
+    userList[id] = name;
+    const usersDiv = document.getElementById('users');
+    usersDiv.innerHTML = 'Online: ' + Object.values(userList).map(n => `<span class="online">●</span> ${n}`).join(', ');
+  }
+
+  function appendMessage(name, text, time) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message';
+    msgDiv.innerHTML = `<strong>${name}</strong> <small>${new Date(time).toLocaleTimeString()}</small><br>${sanitize(text)}`;
+    document.getElementById('messages').appendChild(msgDiv);
+    msgDiv.scrollIntoView();
+  }
+
+  function appendImage(name, base64, time) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message image-msg';
+    msgDiv.innerHTML = `<strong>${name}</strong> <small>${new Date(time).toLocaleTimeString()}</small><br><img src="${base64}" />`;
+    document.getElementById('messages').appendChild(msgDiv);
+    msgDiv.scrollIntoView();
+  }
+
+  function sendMessage() {
+    const input = document.getElementById('messageInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const msg = { type: 'text', name: username, text, time: Date.now() };
+    appendMessage(username, text, msg.time);
+    Object.values(connections).forEach(c => c.open && c.send(msg));
+    input.value = '';
+  }
+
+  document.getElementById('imageInput').addEventListener('change', function () {
+    const file = this.files[0];
+    if (!file || !['image/png', 'image/jpeg'].includes(file.type)) {
+      alert('Only PNG/JPEG allowed');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Max 2MB file size');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const msg = { type: 'image', name: username, image: reader.result, time: Date.now() };
+      appendImage(username, reader.result, msg.time);
+      Object.values(connections).forEach(c => c.open && c.send(msg));
+    };
+    reader.readAsDataURL(file);
+    this.value = '';
+  });
+
+  function sanitize(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+</script>
+
+</body>
+</html>
