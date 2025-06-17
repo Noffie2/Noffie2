@@ -1,208 +1,225 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <title>P2P Chat</title>
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
-  <style>
-    body {
-      margin: 0;
-      background: #121212;
-      color: #e0e0e0;
-      font-family: sans-serif;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    #login, #chat {
-      margin: auto;
-      width: 100%;
-      max-width: 600px;
-      padding: 20px;
-    }
-    #login {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    #chat {
-      display: none;
-      flex-direction: column;
-      height: 100vh;
-    }
-    #messages {
-      flex: 1;
-      overflow-y: auto;
-      border: 1px solid #1f1f1f;
-      padding: 10px;
-      background: #1f1f1f;
-      margin-bottom: 10px;
-    }
-    .message {
-      margin-bottom: 10px;
-    }
-    .image-msg img {
-      max-width: 200px;
-      max-height: 200px;
-    }
-    #users {
-      font-size: 0.9em;
-      margin-bottom: 10px;
-    }
-    #users span {
-      margin-right: 10px;
-    }
-    .online {
-      color: limegreen;
-    }
-    input, button {
-      background: #1f1f1f;
-      color: #e0e0e0;
-      border: 1px solid #333;
-      padding: 5px;
-    }
-  </style>
+    <meta charset="UTF-8" />
+    <title>P2P Chat (Simple-Peer)</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #login,
+        #chat {
+            margin: auto;
+            max-width: 600px;
+            width: 100%;
+            padding: 20px;
+        }
+
+        #chat {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #1f1f1f;
+            padding: 10px;
+            background: #1f1f1f;
+            margin-bottom: 10px;
+        }
+
+        .message {
+            margin-bottom: 10px;
+        }
+
+        .image-msg img {
+            max-width: 200px;
+            max-height: 200px;
+        }
+
+        #users {
+            margin-bottom: 10px;
+        }
+
+        input,
+        button {
+            background: #1f1f1f;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            padding: 5px;
+            margin-top: 5px;
+        }
+
+        #bottom-controls {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
 </head>
+
 <body>
 
-<div id="login">
-  <h2>Enter a display name:</h2>
-  <input type="text" id="usernameInput" placeholder="Your name" />
-  <button onclick="startChat()">Join Chat</button>
-</div>
+    <div id="login">
+        <h2>Enter a display name:</h2>
+        <input type="text" id="usernameInput" placeholder="Your name" />
+        <button onclick="start()">Join Chat</button>
+    </div>
 
-<div id="chat">
-  <div id="users">Online: </div>
-  <div id="messages"></div>
-  <input type="file" id="imageInput" accept="image/png, image/jpeg" />
-  <input type="text" id="messageInput" placeholder="Type a message..." />
-  <button onclick="sendMessage()">Send</button>
-</div>
+    <div id="chat">
+        <div id="users">Online: <span id="onlineCount">0</span></div>
+        <div id="messages"></div>
+        <div id="bottom-controls">
+            <input type="file" id="imageInput" accept="image/png, image/jpeg" />
+            <input type="text" id="messageInput" placeholder="Type a message..." />
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
 
-<script>
-  let username = '';
-  let peer, conn;
-  const connections = {};
-  const peers = new Set();
-  const userList = {};
+    <script src="https://cdn.jsdelivr.net/npm/signalhub@5.0.2/signalhub.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <script>
+        const ROOM_NAME = 'chat-room-v1'; // change for isolation
+        const hub = signalhub(ROOM_NAME, ['https://signalhub-jccqtwhdwc.now.sh']);
 
-  function startChat() {
-    username = document.getElementById('usernameInput').value.trim();
-    if (!username) return alert('Enter a name');
+        let username = '';
+        let peers = {};
+        let connections = 0;
 
-    document.getElementById('login').style.display = 'none';
-    document.getElementById('chat').style.display = 'flex';
+        function start() {
+            username = document.getElementById('usernameInput').value.trim();
+            if (!username) return alert('Enter a name');
 
-    const peerId = 'user-' + Math.random().toString(36).substr(2, 9);
-    peer = new Peer(peerId, { host: 'peerjs.com', secure: true, port: 443 });
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('chat').style.display = 'flex';
 
-    peer.on('open', () => {
-      broadcastPresence();
-    });
-
-    peer.on('connection', (newConn) => {
-      newConn.on('data', (data) => handleIncoming(newConn.peer, data));
-      newConn.on('open', () => {
-        connections[newConn.peer] = newConn;
-        broadcastPresence();
-      });
-    });
-
-    setInterval(broadcastPresence, 5000);
-    discoverPeers();
-  }
-
-  function discoverPeers() {
-    fetch('https://0.peerjs.com/peers') // using peerjs default broker
-      .then(res => res.json())
-      .then(peersList => {
-        peersList.forEach(id => {
-          if (id !== peer.id && !connections[id]) {
-            const c = peer.connect(id);
-            c.on('open', () => {
-              connections[id] = c;
-              c.on('data', data => handleIncoming(id, data));
-              broadcastPresence();
+            const myId = Math.random().toString(36).slice(2);
+            hub.subscribe('connect').on('data', data => {
+                if (data.from !== myId && !peers[data.from]) {
+                    const peer = new SimplePeer({ initiator: false, trickle: false });
+                    setupPeer(peer, data.from);
+                    peer.signal(data.signal);
+                }
             });
-          }
+
+            hub.subscribe('signal').on('data', data => {
+                if (data.to === myId && peers[data.from]) {
+                    peers[data.from].signal(data.signal);
+                }
+            });
+
+            // Broadcast to others that I'm available
+            function announce() {
+                const peer = new SimplePeer({ initiator: true, trickle: false });
+                const id = Math.random().toString(36).slice(2);
+                setupPeer(peer, id);
+                peer.on('signal', signal => {
+                    hub.broadcast('connect', { from: myId, signal });
+                });
+            }
+
+            announce();
+        }
+
+        function setupPeer(peer, id) {
+            peers[id] = peer;
+            connections++;
+            updateOnlineCount();
+
+            peer.on('signal', signal => {
+                hub.broadcast('signal', { from: id, to: id, signal });
+            });
+
+            peer.on('data', data => {
+                const msg = JSON.parse(data);
+                if (msg.type === 'text') {
+                    appendMessage(msg.name, msg.text, msg.time);
+                } else if (msg.type === 'image') {
+                    appendImage(msg.name, msg.image, msg.time);
+                }
+            });
+
+            peer.on('close', () => {
+                delete peers[id];
+                connections--;
+                updateOnlineCount();
+            });
+        }
+
+        function updateOnlineCount() {
+            document.getElementById('onlineCount').innerText = connections + 1;
+        }
+
+        function appendMessage(name, text, time) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<strong>${name}</strong> <small>${new Date(time).toLocaleTimeString()}</small><br>${sanitize(text)}`;
+            document.getElementById('messages').appendChild(div);
+            div.scrollIntoView();
+        }
+
+        function appendImage(name, base64, time) {
+            const div = document.createElement('div');
+            div.className = 'message image-msg';
+            div.innerHTML = `<strong>${name}</strong> <small>${new Date(time).toLocaleTimeString()}</small><br><img src="${base64}" />`;
+            document.getElementById('messages').appendChild(div);
+            div.scrollIntoView();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+            const msg = { type: 'text', name: username, text, time: Date.now() };
+            appendMessage(username, text, msg.time);
+            broadcast(msg);
+            input.value = '';
+        }
+
+        document.getElementById('imageInput').addEventListener('change', function () {
+            const file = this.files[0];
+            if (!file || !['image/png', 'image/jpeg'].includes(file.type)) {
+                alert('Only PNG or JPEG allowed');
+                return;
+            }
+            if (file.size > 2 * 1024 * 1024) {
+                alert('Image must be under 2MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+                const msg = { type: 'image', name: username, image: reader.result, time: Date.now() };
+                appendImage(username, reader.result, msg.time);
+                broadcast(msg);
+            };
+            reader.readAsDataURL(file);
+            this.value = '';
         });
-      });
-  }
 
-  function broadcastPresence() {
-    const data = { type: 'presence', name: username };
-    Object.values(connections).forEach(c => c.open && c.send(data));
-    updateUsersList(peer.id, username);
-  }
+        function broadcast(msg) {
+            const data = JSON.stringify(msg);
+            for (let id in peers) {
+                if (peers[id].connected) peers[id].send(data);
+            }
+        }
 
-  function handleIncoming(fromId, data) {
-    if (data.type === 'text') {
-      appendMessage(data.name, data.text, data.time);
-    } else if (data.type === 'image') {
-      appendImage(data.name, data.image, data.time);
-    } else if (data.type === 'presence') {
-      updateUsersList(fromId, data.name);
-    }
-  }
-
-  function updateUsersList(id, name) {
-    userList[id] = name;
-    const usersDiv = document.getElementById('users');
-    usersDiv.innerHTML = 'Online: ' + Object.values(userList).map(n => `<span class="online">●</span> ${n}`).join(', ');
-  }
-
-  function appendMessage(name, text, time) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message';
-    msgDiv.innerHTML = `<strong>${name}</strong> <small>${new Date(time).toLocaleTimeString()}</small><br>${sanitize(text)}`;
-    document.getElementById('messages').appendChild(msgDiv);
-    msgDiv.scrollIntoView();
-  }
-
-  function appendImage(name, base64, time) {
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'message image-msg';
-    msgDiv.innerHTML = `<strong>${name}</strong> <small>${new Date(time).toLocaleTimeString()}</small><br><img src="${base64}" />`;
-    document.getElementById('messages').appendChild(msgDiv);
-    msgDiv.scrollIntoView();
-  }
-
-  function sendMessage() {
-    const input = document.getElementById('messageInput');
-    const text = input.value.trim();
-    if (!text) return;
-    const msg = { type: 'text', name: username, text, time: Date.now() };
-    appendMessage(username, text, msg.time);
-    Object.values(connections).forEach(c => c.open && c.send(msg));
-    input.value = '';
-  }
-
-  document.getElementById('imageInput').addEventListener('change', function () {
-    const file = this.files[0];
-    if (!file || !['image/png', 'image/jpeg'].includes(file.type)) {
-      alert('Only PNG/JPEG allowed');
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Max 2MB file size');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const msg = { type: 'image', name: username, image: reader.result, time: Date.now() };
-      appendImage(username, reader.result, msg.time);
-      Object.values(connections).forEach(c => c.open && c.send(msg));
-    };
-    reader.readAsDataURL(file);
-    this.value = '';
-  });
-
-  function sanitize(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-</script>
+        function sanitize(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
 
 </body>
+
 </html>
